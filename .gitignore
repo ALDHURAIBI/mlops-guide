@@ -1,18 +1,10 @@
-
-# Prepared dataset
-data/prepared/
-
-# Evaluation results
-evaluation/
-
-# Trained models
-model/
-
-# Python virtual environment
+## Python
 .venv/
-
-# Python cache
 __pycache__/
 
-# macOS metadata
+## macOS
 .DS_Store
+
+## DVC
+# DVC will add new files after this line
+/model
