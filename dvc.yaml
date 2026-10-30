@@ -19,14 +19,17 @@ stages:
     - train
     outs:
     - model
+    
   evaluate:
     cmd: python3.13 src/evaluate.py model data/prepared
     deps:
     - model
     - src/evaluate.py
+    - data/prepared
     metrics:
     - evaluation/metrics.json
     plots:
     - evaluation/plots/confusion_matrix.png
     - evaluation/plots/pred_preview.png
     - evaluation/plots/training_history.png
+

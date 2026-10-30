@@ -66,6 +66,11 @@ stages:
   evaluate:
     cmd: python3.13 src/evaluate.py model data/prepared
     deps:
+    - path: data/prepared
+      hash: md5
+      md5: dd6ff425dcd5c729a354ed5fab50fb51.dir
+      size: 6184723
+      nfiles: 8
     - path: model
       hash: md5
       md5: 31ce5199a05f8397dc340b19fe447b0a.dir
