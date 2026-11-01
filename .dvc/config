@@ -1,2 +1,5 @@
 [core]
     analytics = false
+    remote = storage
+['remote "storage"']
+    url = gs://mlops-arwa-fall2026-bucket/dvcstore
