@@ -11,3 +11,9 @@ __pycache__/
 .DS_Store
 /model
 dvc_plots/
+
+# Google Cloud authentication files
+gha-creds-*.json
+
+# Google Cloud authentication files
+gha-creds-*.json
