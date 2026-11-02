@@ -1,15 +1,20 @@
-
 name: MLOps Training Pipeline
 
 on:
   push:
     branches:
       - main
+
+  pull_request:
+    branches:
+      - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
+  pull-requests: write
 
 jobs:
   train:
@@ -19,6 +24,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -55,3 +62,65 @@ jobs:
             evaluation/metrics.json
             evaluation/plots/
           retention-days: 7
+
+      - name: Setup CML
+        if: github.event_name == 'pull_request'
+        uses: iterative/setup-cml@v2
+        with:
+          version: '0.20.6'
+          vega: false
+
+      
+      # Generate all six comparison images
+      - name: Generate DVC comparison plots
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main:refs/heads/main
+          dvc plots diff main
+
+          mkdir -p comparison-plots
+
+          cp dvc_plots/static/{main,workspace}_evaluation_plots_{training_history,pred_preview,confusion_matrix}.png comparison-plots/
+
+          echo "Generated comparison images:"
+          ls -lh comparison-plots/
+
+      # Make plots available for download on GitHub
+      - name: Upload comparison plots
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-comparison-plots
+          path: comparison-plots/
+          if-no-files-found: error
+          retention-days: 7
+
+      # Publish the working CML report
+      - name: Create CML report
+        if: github.event_name == 'pull_request'
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "# MLOps Experiment Report" > report.md
+
+          echo "## Parameters vs main" >> report.md
+          dvc params diff main --md >> report.md
+
+          echo "## Metrics vs main" >> report.md
+          dvc metrics diff main --md >> report.md
+
+          echo "## Current Evaluation Metrics" >> report.md
+          echo '```json' >> report.md
+          cat evaluation/metrics.json >> report.md
+          echo '```' >> report.md
+
+          echo "## Model Comparison Plots" >> report.md
+          echo "The artifact contains six PNG images:" >> report.md
+          echo "- Training History: main vs workspace" >> report.md
+          echo "- Predictions Preview: main vs workspace" >> report.md
+          echo "- Confusion Matrix: main vs workspace" >> report.md
+
+          echo "" >> report.md
+          echo "[View and download comparison plots](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> report.md
+
+          cml comment update --target=pr --publish=false report.md
