@@ -132,4 +132,4 @@ jobs:
           echo '![New](./dvc_plots/static/workspace_evaluation_plots_confusion_matrix.png)' >> report.md
 
           # Publish CML report to the pull request
-          cml comment update --target=pr --publish report.md
+          cml comment update --target=pr --publish=false --repo=ALDHURAIBI/mlops-guide report.md
