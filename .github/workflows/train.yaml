@@ -5,11 +5,17 @@ on:
   push:
     branches:
       - main
+
+  pull_request:
+    branches:
+      - main
+
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
+  pull-requests: write
 
 jobs:
   train:
@@ -17,20 +23,26 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
+      # Step 3: Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install "dvc[gs]==3.67.1"
 
+      # Step 4: Authenticate to Google Cloud
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -38,15 +50,19 @@ jobs:
           workload_identity_provider: projects/704937435550/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: google-service-account@mlops-arwa-fall2026.iam.gserviceaccount.com
 
+      # Step 5: Download dataset using DVC
       - name: Download dataset with DVC
         run: dvc pull data/raw.dvc
 
+      # Step 6: Reproduce ML experiment
       - name: Reproduce ML experiment
         run: dvc repro --force
 
+      # Step 7: Display evaluation metrics
       - name: Display evaluation metrics
         run: cat evaluation/metrics.json
 
+      # Step 8: Upload evaluation results
       - name: Upload evaluation results
         uses: actions/upload-artifact@v4
         with:
@@ -55,3 +71,65 @@ jobs:
             evaluation/metrics.json
             evaluation/plots/
           retention-days: 7
+
+      # Step 9: Install CML for pull requests
+      - name: Setup CML
+        if: github.event_name == 'pull_request'
+        uses: iterative/setup-cml@v2
+        with:
+          version: '0.20.6'
+          vega: false
+
+      # Step 10: Generate and publish CML report
+      - name: Create CML report
+        if: github.event_name == 'pull_request'
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Fetch main branch for comparisons
+          git fetch origin main:refs/heads/main
+
+          # Create report title
+          echo "# Experiment Report" > report.md
+          echo "Commit: ${{ github.sha }}" >> report.md
+
+          # Compare model parameters
+          echo "## Parameters vs main" >> report.md
+          dvc params diff main --md >> report.md
+
+          # Compare evaluation metrics
+          echo "## Metrics vs main" >> report.md
+          dvc metrics diff main --md >> report.md
+
+          # Generate plot comparisons
+          dvc plots diff main
+
+          # Training history comparison
+          echo "## Training History" >> report.md
+
+          echo "### Main branch" >> report.md
+          echo '![Main](./dvc_plots/static/main_evaluation_plots_training_history.png)' >> report.md
+
+          echo "### New experiment" >> report.md
+          echo '![New](./dvc_plots/static/workspace_evaluation_plots_training_history.png)' >> report.md
+
+          # Predictions preview comparison
+          echo "## Predictions Preview" >> report.md
+
+          echo "### Main branch" >> report.md
+          echo '![Main](./dvc_plots/static/main_evaluation_plots_pred_preview.png)' >> report.md
+
+          echo "### New experiment" >> report.md
+          echo '![New](./dvc_plots/static/workspace_evaluation_plots_pred_preview.png)' >> report.md
+
+          # Confusion matrix comparison
+          echo "## Confusion Matrix" >> report.md
+
+          echo "### Main branch" >> report.md
+          echo '![Main](./dvc_plots/static/main_evaluation_plots_confusion_matrix.png)' >> report.md
+
+          echo "### New experiment" >> report.md
+          echo '![New](./dvc_plots/static/workspace_evaluation_plots_confusion_matrix.png)' >> report.md
+
+          # Publish CML report to the pull request
+          cml comment update --target=pr --publish report.md
