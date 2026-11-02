@@ -70,65 +70,57 @@ jobs:
           version: '0.20.6'
           vega: false
 
+      
+      # Generate all six comparison images
+      - name: Generate DVC comparison plots
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin main:refs/heads/main
+          dvc plots diff main
+
+          mkdir -p comparison-plots
+
+          cp dvc_plots/static/{main,workspace}_evaluation_plots_{training_history,pred_preview,confusion_matrix}.png comparison-plots/
+
+          echo "Generated comparison images:"
+          ls -lh comparison-plots/
+
+      # Make plots available for download on GitHub
+      - name: Upload comparison plots
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-comparison-plots
+          path: comparison-plots/
+          if-no-files-found: error
+          retention-days: 7
+
+      # Publish the working CML report
       - name: Create CML report
         if: github.event_name == 'pull_request'
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch main branch locally for comparisons
-          git fetch --depth=1 origin main:main
+          echo "# MLOps Experiment Report" > report.md
 
-          # Create DVC comparison plots
-          dvc plots diff main
+          echo "## Parameters vs main" >> report.md
+          dvc params diff main --md >> report.md
 
-          # Detect actual filenames created by DVC
-          MAIN_PREFIX="main"
-          WORK_PREFIX="workspace"
+          echo "## Metrics vs main" >> report.md
+          dvc metrics diff main --md >> report.md
 
-          if [ -f dvc_plots/static/origin_main_evaluation_plots_training_history.png ]; then
-            MAIN_PREFIX="origin_main"
-          fi
+          echo "## Current Evaluation Metrics" >> report.md
+          echo '```json' >> report.md
+          cat evaluation/metrics.json >> report.md
+          echo '```' >> report.md
 
-          if [ -f dvc_plots/static/HEAD_evaluation_plots_training_history.png ]; then
-            WORK_PREFIX="HEAD"
-          fi
+          echo "## Model Comparison Plots" >> report.md
+          echo "The artifact contains six PNG images:" >> report.md
+          echo "- Training History: main vs workspace" >> report.md
+          echo "- Predictions Preview: main vs workspace" >> report.md
+          echo "- Confusion Matrix: main vs workspace" >> report.md
 
-          # Start report
-          {
-            echo "# MLOps Experiment Report"
-            echo
-            echo "## Parameters vs main"
-            dvc params diff main --md || true
-            echo
-            echo "## Metrics vs main"
-            dvc metrics diff main --md || true
-            echo
-            echo "## Current Evaluation Metrics"
-            echo '```json'
-            cat evaluation/metrics.json
-            echo '```'
-            echo
-          } > report.md
+          echo "" >> report.md
+          echo "[View and download comparison plots](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> report.md
 
-          publish_plot_pair() {
-            TITLE="$1"
-            BASENAME="$2"
-
-            echo "## ${TITLE}" >> report.md
-            echo >> report.md
-
-            echo "### Main branch" >> report.md
-            cml publish "dvc_plots/static/${MAIN_PREFIX}_evaluation_plots_${BASENAME}.png" --md >> report.md
-            echo >> report.md
-
-            echo "### New experiment" >> report.md
-            cml publish "dvc_plots/static/${WORK_PREFIX}_evaluation_plots_${BASENAME}.png" --md >> report.md
-            echo >> report.md
-          }
-
-          publish_plot_pair "Training History" "training_history"
-          publish_plot_pair "Predictions Preview" "pred_preview"
-          publish_plot_pair "Confusion Matrix" "confusion_matrix"
-
-          # Publish PR comment
-          cml comment update --target=pr report.md
+          cml comment update --target=pr --publish=false report.md
