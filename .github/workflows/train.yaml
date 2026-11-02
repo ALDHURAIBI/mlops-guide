@@ -81,55 +81,32 @@ jobs:
           vega: false
 
       # Step 10: Generate and publish CML report
+
       - name: Create CML report
         if: github.event_name == 'pull_request'
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Fetch main branch for comparisons
           git fetch origin main:refs/heads/main
 
-          # Create report title
-          echo "# Experiment Report" > report.md
-          echo "Commit: ${{ github.sha }}" >> report.md
+          echo "# MLOps Experiment Report" > report.md
+          echo "" >> report.md
 
-          # Compare model parameters
           echo "## Parameters vs main" >> report.md
           dvc params diff main --md >> report.md
 
-          # Compare evaluation metrics
+          echo "" >> report.md
           echo "## Metrics vs main" >> report.md
           dvc metrics diff main --md >> report.md
 
-          # Generate plot comparisons
-          dvc plots diff main
+          echo "" >> report.md
+          echo "## Current Evaluation Metrics" >> report.md
+          echo '```json' >> report.md
+          cat evaluation/metrics.json >> report.md
+          echo '```' >> report.md
 
-          # Training history comparison
-          echo "## Training History" >> report.md
-
-          echo "### Main branch" >> report.md
-          echo '![Main](./dvc_plots/static/main_evaluation_plots_training_history.png)' >> report.md
-
-          echo "### New experiment" >> report.md
-          echo '![New](./dvc_plots/static/workspace_evaluation_plots_training_history.png)' >> report.md
-
-          # Predictions preview comparison
-          echo "## Predictions Preview" >> report.md
-
-          echo "### Main branch" >> report.md
-          echo '![Main](./dvc_plots/static/main_evaluation_plots_pred_preview.png)' >> report.md
-
-          echo "### New experiment" >> report.md
-          echo '![New](./dvc_plots/static/workspace_evaluation_plots_pred_preview.png)' >> report.md
-
-          # Confusion matrix comparison
-          echo "## Confusion Matrix" >> report.md
-
-          echo "### Main branch" >> report.md
-          echo '![Main](./dvc_plots/static/main_evaluation_plots_confusion_matrix.png)' >> report.md
-
-          echo "### New experiment" >> report.md
-          echo '![New](./dvc_plots/static/workspace_evaluation_plots_confusion_matrix.png)' >> report.md
-
-          # Publish CML report to the pull request
-          cml comment update --target=pr --publish=false --repo=ALDHURAIBI/mlops-guide report.md
+          cml comment update \
+            --target=pr \
+            --publish=false \
+            --repo=https://github.com/ALDHURAIBI/mlops-guide \
+            report.md
