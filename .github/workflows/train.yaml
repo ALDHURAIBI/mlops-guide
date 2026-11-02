@@ -1,4 +1,3 @@
-
 name: MLOps Training Pipeline
 
 on:
@@ -23,26 +22,22 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.13'
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install "dvc[gs]==3.67.1"
 
-      # Step 4: Authenticate to Google Cloud
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -50,19 +45,15 @@ jobs:
           workload_identity_provider: projects/704937435550/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: google-service-account@mlops-arwa-fall2026.iam.gserviceaccount.com
 
-      # Step 5: Download dataset using DVC
       - name: Download dataset with DVC
         run: dvc pull data/raw.dvc
 
-      # Step 6: Reproduce ML experiment
       - name: Reproduce ML experiment
         run: dvc repro --force
 
-      # Step 7: Display evaluation metrics
       - name: Display evaluation metrics
         run: cat evaluation/metrics.json
 
-      # Step 8: Upload evaluation results
       - name: Upload evaluation results
         uses: actions/upload-artifact@v4
         with:
@@ -72,7 +63,6 @@ jobs:
             evaluation/plots/
           retention-days: 7
 
-      # Step 9: Install CML for pull requests
       - name: Setup CML
         if: github.event_name == 'pull_request'
         uses: iterative/setup-cml@v2
@@ -80,33 +70,65 @@ jobs:
           version: '0.20.6'
           vega: false
 
-      # Step 10: Generate and publish CML report
-
       - name: Create CML report
         if: github.event_name == 'pull_request'
         env:
           REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git fetch origin main:refs/heads/main
+          # Fetch main branch locally for comparisons
+          git fetch --depth=1 origin main:main
 
-          echo "# MLOps Experiment Report" > report.md
-          echo "" >> report.md
+          # Create DVC comparison plots
+          dvc plots diff main
 
-          echo "## Parameters vs main" >> report.md
-          dvc params diff main --md >> report.md
+          # Detect actual filenames created by DVC
+          MAIN_PREFIX="main"
+          WORK_PREFIX="workspace"
 
-          echo "" >> report.md
-          echo "## Metrics vs main" >> report.md
-          dvc metrics diff main --md >> report.md
+          if [ -f dvc_plots/static/origin_main_evaluation_plots_training_history.png ]; then
+            MAIN_PREFIX="origin_main"
+          fi
 
-          echo "" >> report.md
-          echo "## Current Evaluation Metrics" >> report.md
-          echo '```json' >> report.md
-          cat evaluation/metrics.json >> report.md
-          echo '```' >> report.md
+          if [ -f dvc_plots/static/HEAD_evaluation_plots_training_history.png ]; then
+            WORK_PREFIX="HEAD"
+          fi
 
-          cml comment update \
-            --target=pr \
-            --publish=false \
-            --repo=https://github.com/ALDHURAIBI/mlops-guide \
-            report.md
+          # Start report
+          {
+            echo "# MLOps Experiment Report"
+            echo
+            echo "## Parameters vs main"
+            dvc params diff main --md || true
+            echo
+            echo "## Metrics vs main"
+            dvc metrics diff main --md || true
+            echo
+            echo "## Current Evaluation Metrics"
+            echo '```json'
+            cat evaluation/metrics.json
+            echo '```'
+            echo
+          } > report.md
+
+          publish_plot_pair() {
+            TITLE="$1"
+            BASENAME="$2"
+
+            echo "## ${TITLE}" >> report.md
+            echo >> report.md
+
+            echo "### Main branch" >> report.md
+            cml publish "dvc_plots/static/${MAIN_PREFIX}_evaluation_plots_${BASENAME}.png" --md >> report.md
+            echo >> report.md
+
+            echo "### New experiment" >> report.md
+            cml publish "dvc_plots/static/${WORK_PREFIX}_evaluation_plots_${BASENAME}.png" --md >> report.md
+            echo >> report.md
+          }
+
+          publish_plot_pair "Training History" "training_history"
+          publish_plot_pair "Predictions Preview" "pred_preview"
+          publish_plot_pair "Confusion Matrix" "confusion_matrix"
+
+          # Publish PR comment
+          cml comment update --target=pr report.md
